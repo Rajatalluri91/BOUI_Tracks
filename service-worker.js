@@ -1,58 +1,39 @@
+// sw.js
 
-const CACHE_NAME = 'boui-dynamic-v1';
-const OFFLINE_FILES = [
-  '/',
-  '/index.html',
-  '/style.css',
-  // Add any assets like icons or fonts used
-];
+const CACHE_NAME = 'boui-music-dynamic-cache-v1';
 
-// Install event – pre-cache some files
-self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(OFFLINE_FILES);
-    })
-  );
-  self.skipWaiting();
+self.addEventListener('install', (event) => {
+  self.skipWaiting(); // Activate worker immediately
 });
 
-// Activate event – cleanup old caches
-self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(keyList =>
-      Promise.all(
-        keyList.map(key => {
-          if (key !== CACHE_NAME) {
-            return caches.delete(key);
+self.addEventListener('activate', (event) => {
+  clients.claim(); // Take control of uncontrolled clients
+});
+
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+
+  event.respondWith(
+    caches.match(event.request).then((cachedRes) => {
+      if (cachedRes) {
+        return cachedRes;
+      }
+
+      return fetch(event.request)
+        .then((networkRes) => {
+          // Cache only same-origin or CORS-allowed responses
+          if (!networkRes || networkRes.status !== 200 || networkRes.type === 'opaque') {
+            return networkRes;
           }
-        })
-      )
-    )
-  );
-  self.clients.claim();
-});
 
-// Fetch event – dynamic cache for MP3 and lyrics
-self.addEventListener('fetch', event => {
-  const url = event.request.url;
-
-  if (url.endsWith('.mp3') || url.endsWith('.txt')) {
-    event.respondWith(
-      caches.open(CACHE_NAME).then(cache =>
-        cache.match(event.request).then(response => {
-          return response || fetch(event.request).then(networkResponse => {
-            cache.put(event.request, networkResponse.clone());
-            return networkResponse;
+          return caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, networkRes.clone());
+            return networkRes;
           });
         })
-      )
-    );
-  } else {
-    event.respondWith(
-      fetch(event.request).catch(() =>
-        caches.match(event.request)
-      )
-    );
-  }
+        .catch(() => {
+          return new Response('Offline – Resource unavailable');
+        });
+    })
+  );
 });
